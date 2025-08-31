@@ -21,7 +21,7 @@ drivers = {
     "driver4": {"password": "pass4", "busId": "4", "name": "Sarah Wilson"}
 }
 
-users = {
+students = {
     "student1": {"password": "pass1", "name": "Alex Johnson"},
     "student2": {"password": "pass2", "name": "Emma Davis"},
     "student3": {"password": "pass3", "name": "Michael Brown"}
@@ -38,18 +38,22 @@ def get_buses():
 def update_bus_location(bus_id):
     """
     Drivers send their current location to update the server.
-    This matches the frontend endpoint expectation.
     """
-    data = request.get_json(force=True)
+    data = request.get_json()
+    if not data:
+        return jsonify({"status": "error", "message": "No data provided"}), 400
+    
     lat = data.get('lat')
     lng = data.get('lng')
     timestamp = data.get('timestamp')
-    status = data.get('status', 'active')
+    
+    if lat is None or lng is None:
+        return jsonify({"status": "error", "message": "Latitude and longitude required"}), 400
 
     if bus_id in buses:
         buses[bus_id]['lat'] = lat
         buses[bus_id]['lng'] = lng
-        buses[bus_id]['status'] = status
+        buses[bus_id]['status'] = 'active'
         buses[bus_id]['lastUpdate'] = timestamp or datetime.now().isoformat()
         return jsonify({"status": "success", "message": "Location updated", "bus": buses[bus_id]}), 200
     else:
@@ -58,10 +62,16 @@ def update_bus_location(bus_id):
 @app.route('/driver/login', methods=['POST'])
 def login_driver():
     """Driver login: assign driver to their bus."""
-    data = request.get_json(force=True)
+    data = request.get_json()
+    if not data:
+        return jsonify({"status": "error", "message": "No data provided"}), 400
+    
     driver_id = data.get('driver_id')
     password = data.get('password')
-    bus_id = data.get('bus_id')  # Frontend sends selected bus ID
+    bus_id = data.get('bus_id')
+
+    if not driver_id or not password or not bus_id:
+        return jsonify({"status": "error", "message": "Driver ID, password and bus ID required"}), 400
 
     if driver_id in drivers and drivers[driver_id]['password'] == password:
         # Check if driver is assigned to this bus
@@ -83,36 +93,57 @@ def login_driver():
 @app.route('/driver/logout', methods=['POST'])
 def logout_driver():
     """Driver logout: release bus assignment."""
-    data = request.get_json(force=True)
+    data = request.get_json()
+    if not data:
+        return jsonify({"status": "error", "message": "No data provided"}), 400
+    
     driver_id = data.get('driver_id')
     bus_id = data.get('bus_id')
 
-    if bus_id in buses and buses[bus_id]['driver'] == driver_id:
-        buses[bus_id]['driver'] = None
-        buses[bus_id]['status'] = 'inactive'
-        return jsonify({"status": "success", "message": "Driver logged out successfully"}), 200
+    if not driver_id or not bus_id:
+        return jsonify({"status": "error", "message": "Driver ID and bus ID required"}), 400
+
+    if bus_id in buses:
+        if buses[bus_id]['driver'] == driver_id:
+            buses[bus_id]['driver'] = None
+            buses[bus_id]['status'] = 'inactive'
+            return jsonify({"status": "success", "message": "Driver logged out successfully"}), 200
+        else:
+            return jsonify({"status": "error", "message": "Driver not assigned to this bus"}), 400
     else:
-        return jsonify({"status": "error", "message": "Driver not assigned to this bus"}), 400
+        return jsonify({"status": "error", "message": "Bus not found"}), 404
 
 @app.route('/student/login', methods=['POST'])
 def login_student():
     """Student login."""
-    data = request.get_json(force=True)
+    data = request.get_json()
+    if not data:
+        return jsonify({"status": "error", "message": "No data provided"}), 400
+    
     student_id = data.get('student_id')
     password = data.get('password')
 
-    if student_id in users and users[student_id]['password'] == password:
+    if not student_id or not password:
+        return jsonify({"status": "error", "message": "Student ID and password required"}), 400
+
+    if student_id in students and students[student_id]['password'] == password:
         return jsonify({
             "status": "success", 
             "message": "Student login successful",
-            "studentName": users[student_id]['name']
+            "studentName": students[student_id]['name']
         }), 200
     else:
         return jsonify({"status": "error", "message": "Invalid student credentials"}), 401
+
+# Health check endpoint
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "healthy", "message": "Server is running"}), 200
 
 # ================== Run Server ==================
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000, debug=True)
+    
 #     <!-- venv/Scripts/activate -->
 #  <!-- uvicorn main:app --reload --host 0.0.0.0 --port 8000 -->
