@@ -1,9 +1,38 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
+from pydantic import BaseModel
+from typing import Dict, Optional
 
-app = Flask(__name__)
-CORS(app)
+app = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Pydantic models for request validation
+class LocationUpdate(BaseModel):
+    lat: float
+    lng: float
+    timestamp: Optional[str] = None
+
+class DriverLogin(BaseModel):
+    driver_id: str
+    password: str
+    bus_id: str
+
+class DriverLogout(BaseModel):
+    driver_id: str
+    bus_id: str
+
+class StudentLogin(BaseModel):
+    student_id: str
+    password: str
 
 # In-memory bus data
 buses = {
@@ -29,121 +58,82 @@ students = {
 
 # ================== Routes ==================
 
-@app.route('/buses', methods=['GET'])
-def get_buses():
+@app.get("/buses")
+async def get_buses():
     """Return all buses with latest location and status."""
-    return jsonify(buses), 200
+    return buses
 
-@app.route('/buses/<bus_id>/location', methods=['POST'])
-def update_bus_location(bus_id):
+@app.post("/buses/{bus_id}/location")
+async def update_bus_location(bus_id: str, location: LocationUpdate):
     """
     Drivers send their current location to update the server.
     """
-    data = request.get_json()
-    if not data:
-        return jsonify({"status": "error", "message": "No data provided"}), 400
+    if bus_id not in buses:
+        raise HTTPException(status_code=404, detail="Bus not found")
     
-    lat = data.get('lat')
-    lng = data.get('lng')
-    timestamp = data.get('timestamp')
+    buses[bus_id]['lat'] = location.lat
+    buses[bus_id]['lng'] = location.lng
+    buses[bus_id]['status'] = 'active'
+    buses[bus_id]['lastUpdate'] = location.timestamp or datetime.now().isoformat()
     
-    if lat is None or lng is None:
-        return jsonify({"status": "error", "message": "Latitude and longitude required"}), 400
+    return {"status": "success", "message": "Location updated", "bus": buses[bus_id]}
 
-    if bus_id in buses:
-        buses[bus_id]['lat'] = lat
-        buses[bus_id]['lng'] = lng
-        buses[bus_id]['status'] = 'active'
-        buses[bus_id]['lastUpdate'] = timestamp or datetime.now().isoformat()
-        return jsonify({"status": "success", "message": "Location updated", "bus": buses[bus_id]}), 200
-    else:
-        return jsonify({"status": "error", "message": "Bus not found"}), 404
-
-@app.route('/driver/login', methods=['POST'])
-def login_driver():
+@app.post("/driver/login")
+async def login_driver(login_data: DriverLogin):
     """Driver login: assign driver to their bus."""
-    data = request.get_json()
-    if not data:
-        return jsonify({"status": "error", "message": "No data provided"}), 400
+    if login_data.driver_id not in drivers or drivers[login_data.driver_id]['password'] != login_data.password:
+        raise HTTPException(status_code=401, detail="Invalid driver credentials")
     
-    driver_id = data.get('driver_id')
-    password = data.get('password')
-    bus_id = data.get('bus_id')
+    # Check if driver is assigned to this bus
+    if drivers[login_data.driver_id]['busId'] != login_data.bus_id:
+        raise HTTPException(status_code=403, detail="Driver not assigned to this bus")
+        
+    # Assign driver to bus and set status to active
+    buses[login_data.bus_id]['driver'] = login_data.driver_id
+    buses[login_data.bus_id]['status'] = 'active'
+    
+    return {
+        "status": "success", 
+        "message": "Driver login successful", 
+        "busId": login_data.bus_id,
+        "driverName": drivers[login_data.driver_id]['name']
+    }
 
-    if not driver_id or not password or not bus_id:
-        return jsonify({"status": "error", "message": "Driver ID, password and bus ID required"}), 400
-
-    if driver_id in drivers and drivers[driver_id]['password'] == password:
-        # Check if driver is assigned to this bus
-        if drivers[driver_id]['busId'] != bus_id:
-            return jsonify({"status": "error", "message": "Driver not assigned to this bus"}), 403
-            
-        # Assign driver to bus and set status to active
-        buses[bus_id]['driver'] = driver_id
-        buses[bus_id]['status'] = 'active'
-        return jsonify({
-            "status": "success", 
-            "message": "Driver login successful", 
-            "busId": bus_id,
-            "driverName": drivers[driver_id]['name']
-        }), 200
-    else:
-        return jsonify({"status": "error", "message": "Invalid driver credentials"}), 401
-
-@app.route('/driver/logout', methods=['POST'])
-def logout_driver():
+@app.post("/driver/logout")
+async def logout_driver(logout_data: DriverLogout):
     """Driver logout: release bus assignment."""
-    data = request.get_json()
-    if not data:
-        return jsonify({"status": "error", "message": "No data provided"}), 400
+    if logout_data.bus_id not in buses:
+        raise HTTPException(status_code=404, detail="Bus not found")
     
-    driver_id = data.get('driver_id')
-    bus_id = data.get('bus_id')
+    if buses[logout_data.bus_id]['driver'] != logout_data.driver_id:
+        raise HTTPException(status_code=400, detail="Driver not assigned to this bus")
+    
+    buses[logout_data.bus_id]['driver'] = None
+    buses[logout_data.bus_id]['status'] = 'inactive'
+    
+    return {"status": "success", "message": "Driver logged out successfully"}
 
-    if not driver_id or not bus_id:
-        return jsonify({"status": "error", "message": "Driver ID and bus ID required"}), 400
-
-    if bus_id in buses:
-        if buses[bus_id]['driver'] == driver_id:
-            buses[bus_id]['driver'] = None
-            buses[bus_id]['status'] = 'inactive'
-            return jsonify({"status": "success", "message": "Driver logged out successfully"}), 200
-        else:
-            return jsonify({"status": "error", "message": "Driver not assigned to this bus"}), 400
-    else:
-        return jsonify({"status": "error", "message": "Bus not found"}), 404
-
-@app.route('/student/login', methods=['POST'])
-def login_student():
+@app.post("/student/login")
+async def login_student(login_data: StudentLogin):
     """Student login."""
-    data = request.get_json()
-    if not data:
-        return jsonify({"status": "error", "message": "No data provided"}), 400
+    if login_data.student_id not in students or students[login_data.student_id]['password'] != login_data.password:
+        raise HTTPException(status_code=401, detail="Invalid student credentials")
     
-    student_id = data.get('student_id')
-    password = data.get('password')
+    return {
+        "status": "success", 
+        "message": "Student login successful",
+        "studentName": students[login_data.student_id]['name']
+    }
 
-    if not student_id or not password:
-        return jsonify({"status": "error", "message": "Student ID and password required"}), 400
-
-    if student_id in students and students[student_id]['password'] == password:
-        return jsonify({
-            "status": "success", 
-            "message": "Student login successful",
-            "studentName": students[student_id]['name']
-        }), 200
-    else:
-        return jsonify({"status": "error", "message": "Invalid student credentials"}), 401
-
-# Health check endpoint
-@app.route('/health', methods=['GET'])
-def health_check():
-    return jsonify({"status": "healthy", "message": "Server is running"}), 200
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "message": "Server is running"}
 
 # ================== Run Server ==================
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8000, debug=True)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
     
 #     <!-- venv/Scripts/activate -->
 #  <!-- uvicorn main:app --reload --host 0.0.0.0 --port 8000 -->
