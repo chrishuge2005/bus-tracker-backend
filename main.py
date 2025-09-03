@@ -11,7 +11,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://astounding-gingersnap-c4eb35.netlify.app",
-        "http://localhost:5500"],  # Allows all origins
+    ],  # Allows all origins
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
