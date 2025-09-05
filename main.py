@@ -4,13 +4,13 @@ from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional
 
-app = FastAPI()
+app = FastAPI(title="College Bus Tracker API")
 
 # ================== CORS ==================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://astounding-gingersnap-c4eb35.netlify.app",  # your Netlify frontend
+        "https://astounding-gingersnap-c4eb35.netlify.app",  # your deployed frontend
         "http://localhost:3000",   # React local dev
         "http://127.0.0.1:5500",   # VSCode Live Server
         "http://localhost:8000"    # optional for local API testing
@@ -133,11 +133,6 @@ async def login_student(login_data: StudentLogin):
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "message": "Server is running"}
-
-# ================== Run Server ==================
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
 
 #     <!-- venv/Scripts/activate -->
 #  <!-- uvicorn main:app --reload --host 0.0.0.0 --port 8000 -->
