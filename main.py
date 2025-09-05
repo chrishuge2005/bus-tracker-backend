@@ -2,22 +2,25 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 from pydantic import BaseModel
-from typing import Dict, Optional
+from typing import Optional
 
 app = FastAPI()
 
-# Add CORS middleware
+# ================== CORS ==================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://astounding-gingersnap-c4eb35.netlify.app",
-    ],  # Allows all origins
+        "https://astounding-gingersnap-c4eb35.netlify.app",  # your Netlify frontend
+        "http://localhost:3000",   # React local dev
+        "http://127.0.0.1:5500",   # VSCode Live Server
+        "http://localhost:8000"    # optional for local API testing
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Pydantic models for request validation
+# ================== Models ==================
 class LocationUpdate(BaseModel):
     lat: float
     lng: float
@@ -36,15 +39,18 @@ class StudentLogin(BaseModel):
     student_id: str
     password: str
 
-# In-memory bus data
+# ================== In-memory Data ==================
 buses = {
-    "1": {"lat": 12.9716, "lng": 77.5946, "name": "Campus Shuttle A", "status": "inactive", "lastUpdate": datetime.now().isoformat(), "driver": None},
-    "2": {"lat": 12.9352, "lng": 77.6245, "name": "North Route", "status": "inactive", "lastUpdate": datetime.now().isoformat(), "driver": None},
-    "3": {"lat": 12.9876, "lng": 77.5512, "name": "South Route", "status": "inactive", "lastUpdate": datetime.now().isoformat(), "driver": None},
-    "4": {"lat": 12.9563, "lng": 77.5768, "name": "East Route", "status": "inactive", "lastUpdate": datetime.now().isoformat(), "driver": None}
+    "1": {"lat": 12.9716, "lng": 77.5946, "name": "Campus Shuttle A", "status": "inactive",
+          "lastUpdate": datetime.now().isoformat(), "driver": None},
+    "2": {"lat": 12.9352, "lng": 77.6245, "name": "North Route", "status": "inactive",
+          "lastUpdate": datetime.now().isoformat(), "driver": None},
+    "3": {"lat": 12.9876, "lng": 77.5512, "name": "South Route", "status": "inactive",
+          "lastUpdate": datetime.now().isoformat(), "driver": None},
+    "4": {"lat": 12.9563, "lng": 77.5768, "name": "East Route", "status": "inactive",
+          "lastUpdate": datetime.now().isoformat(), "driver": None}
 }
 
-# Simple in-memory users
 drivers = {
     "driver1": {"password": "pass1", "busId": "1", "name": "John Smith"},
     "driver2": {"password": "pass2", "busId": "2", "name": "Maria Garcia"},
@@ -67,9 +73,7 @@ async def get_buses():
 
 @app.post("/buses/{bus_id}/location")
 async def update_bus_location(bus_id: str, location: LocationUpdate):
-    """
-    Drivers send their current location to update the server.
-    """
+    """Drivers send their current location to update the server."""
     if bus_id not in buses:
         raise HTTPException(status_code=404, detail="Bus not found")
     
@@ -86,11 +90,9 @@ async def login_driver(login_data: DriverLogin):
     if login_data.driver_id not in drivers or drivers[login_data.driver_id]['password'] != login_data.password:
         raise HTTPException(status_code=401, detail="Invalid driver credentials")
     
-    # Check if driver is assigned to this bus
     if drivers[login_data.driver_id]['busId'] != login_data.bus_id:
         raise HTTPException(status_code=403, detail="Driver not assigned to this bus")
         
-    # Assign driver to bus and set status to active
     buses[login_data.bus_id]['driver'] = login_data.driver_id
     buses[login_data.bus_id]['status'] = 'active'
     
@@ -129,13 +131,13 @@ async def login_student(login_data: StudentLogin):
 
 @app.get("/health")
 async def health_check():
+    """Health check endpoint."""
     return {"status": "healthy", "message": "Server is running"}
 
 # ================== Run Server ==================
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-    
+
 #     <!-- venv/Scripts/activate -->
 #  <!-- uvicorn main:app --reload --host 0.0.0.0 --port 8000 -->
